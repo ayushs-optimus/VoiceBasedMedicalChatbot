@@ -2,11 +2,11 @@ import streamlit as st
 import time
 import uuid
 import requests
+import json
 
 API_BASE = "http://localhost:8000/api"
 
 def generate_session():
-    """Generate new user_id and session_id if not already present"""
     if "user_id" not in st.session_state:
         st.session_state.user_id = str(uuid.uuid4())
     if "current_chat_id" not in st.session_state:
@@ -14,103 +14,201 @@ def generate_session():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
+def get_ai_response_stream(query):
+    payload = {
+        "query": query,
+        "user_id": st.session_state.user_id,
+        "session_id": st.session_state.current_chat_id,
+        "stream": True
+    }
+    headers = {}
+    if "access_token" in st.session_state:
+        headers["Authorization"] = f"Bearer {st.session_state.access_token}"
+
+    try:
+        response = requests.post(f"{API_BASE}/chat/completions", json=payload, headers=headers, stream=True)
+        return response if response.status_code == 200 else None
+    except requests.exceptions.RequestException:
+        return None
+
 def get_ai_response(query):
-    """Call backend API for AI response"""
     payload = {
         "query": query,
         "user_id": st.session_state.user_id,
         "session_id": st.session_state.current_chat_id
     }
     headers = {}
-    # Pass access token from MSAL login if available
     if "access_token" in st.session_state:
         headers["Authorization"] = f"Bearer {st.session_state.access_token}"
+
     try:
         response = requests.post(f"{API_BASE}/chat/completions", json=payload, headers=headers)
-        
         if response.status_code == 200:
             data = response.json()
-            print("🚨 Full response JSON from backend:\n", data)
-
-            return data.get("output", "No output received from backend."), data.get("thinking_steps", [])
-
+            msg = data.get("message", "No output received from backend.")
+            return msg.get("content", "No content provided"), msg.get("thinking_process", [])
         else:
             return f"Error {response.status_code}: {response.text}", []
-
     except requests.exceptions.RequestException as e:
         return f"Failed to connect to backend: {str(e)}", []
     except Exception as e:
         return f"Unexpected error: {str(e)}", []
 
-
-def display_chat_message(role, content):
-    """Display chat message"""
-    align = "flex-end" if role == "user" else "flex-start"
-    color = "#DCF8C6" if role == "user" else "#F1F0F0"
-    st.markdown(f"""
-        <div style="display: flex; justify-content: {align}; margin-bottom: 1rem;">
-            <div style="background-color: {color}; padding: 1rem; border-radius: 10px;">
-                {content}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-def display_thinking_process(thinking_process):
-    with st.expander("View AI thinking process"):
-        for step in thinking_process:
-            st.markdown(f"**{step['step']}**: {step['content']}")
-
-def start_new_chat():
-    st.session_state.current_chat_id = str(uuid.uuid4())
-    st.session_state.messages = []
-    st.rerun()
-
-def logout():
-    st.session_state.clear()
-    st.rerun()
+def handle_streaming_response(response):
+    full_response = ""
+    thinking_process = []
+    placeholder = st.empty()
+    try:
+        for line in response.iter_lines():
+            if line:
+                line = line.decode('utf-8')
+                if line.startswith('data: '):
+                    data = line[6:]
+                    if data == '[DONE]':
+                        break
+                    try:
+                        json_data = json.loads(data)
+                        if 'content' in json_data:
+                            full_response += json_data['content']
+                            placeholder.markdown(full_response)
+                        if 'thinking_step' in json_data:
+                            thinking_process.append(json_data['thinking_step'])
+                    except json.JSONDecodeError:
+                        continue
+    except Exception as e:
+        full_response = f"Error during streaming: {str(e)}"
+    return full_response, thinking_process
 
 def chat_page():
-    # Check authentication before loading chat
     if not st.session_state.get("authenticated", False):
         st.warning("Please login to access MediChat AI Assistant.")
         st.stop()
 
-    st.title(f"MediChat AI Assistant - Welcome {st.session_state.get('user_name', '')}")
     generate_session()
 
-    for message in st.session_state.messages:
-        display_chat_message(message["role"], message["content"])
-        if "thinking_process" in message:
-            display_thinking_process(message["thinking_process"])
+    # Inject CSS for styling
+    st.markdown("""
+        <style>
+html, body, [data-testid="stApp"] {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
 
-    with st.form("chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([6, 1])
-        with col1:
-            user_input = st.text_input(
-                "Ask a medical question:",
-                placeholder="e.g., What are the symptoms of diabetes?",
-                label_visibility="collapsed"
-            )
-        with col2:
-            submitted = st.form_submit_button("Send")
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    height: calc(100vh - 130px); /* Adjust height as needed */
+    overflow-y: auto;
+    padding: 0 16px;
+    margin-bottom: 0;
+}
 
-    if submitted and user_input:
+.chat-bubble {
+    padding: 10px 15px;
+    border-radius: 20px;
+    margin: 5px 0;
+    max-width: 75%;
+    word-wrap: break-word;
+}
+
+.user-message {
+    background-color: #005c99;
+    color: white;
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.assistant-message {
+    background-color: #262730;
+    color: #f0f0f0;
+    align-self: flex-start;
+    margin-right: auto;
+}
+
+.chat-row {
+    display: flex;
+}
+
+.input-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px 16px;
+    background-color: #0e1117;
+    z-index: 10;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.4);
+}
+</style>
+
+    """, unsafe_allow_html=True)
+
+    # Header and controls
+    col1, col2 = st.columns([0.75, 0.25])
+    with col1:
+        st.title("💬 MediChat AI Assistant")
+        st.markdown(f"**Welcome, {st.session_state.get('user_name', 'User')}!**")
+    with col2:
+        if st.button("🔄 New Chat"):
+            st.session_state.current_chat_id = str(uuid.uuid4())
+            st.session_state.messages = []
+            st.rerun()
+        if st.button("🚪 Logout"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # Chat display
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    for msg in st.session_state.messages:
+        msg_class = "user-message" if msg["role"] == "user" else "assistant-message"
+        with st.container():
+            st.markdown(f'''
+                <div class="chat-row">
+                    <div class="chat-bubble {msg_class}">
+                        {msg["content"]}
+                    </div>
+                </div>
+            ''', unsafe_allow_html=True)
+            if msg.get("thinking_process") and msg["role"] == "assistant":
+                with st.expander("🧠 View AI thinking process"):
+                    for step in msg["thinking_process"]:
+                        st.markdown(f"**{step['step']}**: {step['content']}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Input fixed at bottom
+    st.markdown('<div class="input-container">', unsafe_allow_html=True)
+    if user_input := st.chat_input("Type your message..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
-        display_chat_message("user", user_input)
+        st.markdown(f'''
+            <div class="chat-row">
+                <div class="chat-bubble user-message">
+                    {user_input}
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
 
-        with st.spinner("MediChat is thinking..."):
-            response, thinking_process = get_ai_response(user_input)
-            time.sleep(1)
+        with st.spinner("Thinking..."):
+            response = get_ai_response_stream(user_input)
+            if response:
+                full_response, thinking = handle_streaming_response(response)
+            else:
+                full_response, thinking = get_ai_response(user_input)
+                st.markdown(f'''
+                    <div class="chat-row">
+                        <div class="chat-bubble assistant-message">
+                            {full_response}
+                        </div>
+                    </div>
+                ''', unsafe_allow_html=True)
 
         st.session_state.messages.append({
             "role": "assistant",
-            "content": response,
-            "thinking_process": thinking_process
+            "content": full_response,
+            "thinking_process": thinking
         })
-        display_chat_message("assistant", response)
-        display_thinking_process(thinking_process)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.sidebar.button("New Chat", on_click=start_new_chat)
-    st.sidebar.button("Logout", on_click=logout)
-
-# Run chat page directly (assumes login is handled separately)

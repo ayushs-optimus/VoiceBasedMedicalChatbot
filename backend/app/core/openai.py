@@ -27,7 +27,7 @@ class AzureOpenAIClient:
 
         # Configure OpenAI client for Azure
         openai.api_type = "azure"
-        openai.api_base = settings.OPENAI_API_BASE
+        openai.api_base = settings.AZURE_OPENAI_SERVICE
         openai.api_version = settings.AZURE_OPENAI_API_VERSION
         openai.api_key = settings.AZURE_OPENAI_KEY
 

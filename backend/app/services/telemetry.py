@@ -22,8 +22,8 @@ def get_telemetry_client() -> TelemetryClient:
         
         # Initialize the telemetry client
         _telemetry_client = TelemetryClient(settings.APPLICATIONINSIGHTS_CONNECTION_STRING)
-        print(f"Telemetry client initialized with connection string: {settings.APPLICATIONINSIGHTS_CONNECTION_STRING}")
-        print(f"Telemetry client: {_telemetry_client}")
+        # print(f"Telemetry client initialized with connection string: {settings.APPLICATIONINSIGHTS_CONNECTION_STRING}")
+        # print(f"Telemetry client: {_telemetry_client}")
         # Set common properties
         _telemetry_client.context.application.ver = "1.0.0"
         _telemetry_client.context.cloud.role = "rag-azure-app"

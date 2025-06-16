@@ -9,12 +9,7 @@ def parse_medical_record(xml_content):
     departments = []
     for dept in root:
         dept_name = dept.tag
-        
-        # Skip elements that are not departments if needed
-        if dept_name in ["patient-id", "description"]:
-            continue
-
-        # Get 'access' attribute as list, split by space if present, else empty list
+      # Get 'access' attribute as list, split by space if present, else empty list
         access_attr = dept.attrib.get("access", "")
         access_list = access_attr.split() if access_attr else []
 

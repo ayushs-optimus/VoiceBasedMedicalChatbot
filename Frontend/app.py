@@ -12,56 +12,73 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 initialize_session_state()
 apply_custom_styles()
 
-# Import application modules
-
-
 def main():
-    """Main function to run the Streamlit application."""
     if not is_authenticated():
-        # Only show login page (MS login button)
         login_page()
     else:
-        with st.sidebar:
-            st.image("https://img.freepik.com/free-vector/gradient-medical-logo-design_23-2149605214.jpg", width=150)
-            st.title(f"Welcome, {st.session_state.user_name}")
+        show_main_app()
 
-            selected = option_menu(
-                menu_title="MediChat AI",
-                options=["Chat", "History", "Feedback"] + (["Admin"] if st.session_state.user_role == "admin" else []),
-                icons=["chat-dots-fill", "clock-history", "star-fill", "shield-lock-fill"],
-                menu_icon="hospital",
-                default_index=0,
-                styles={
-                    "container": {"padding": "0!important", "background-color": "#f8f9fa"},
-                    "icon": {"color": "#1565C0", "font-size": "16px"},
-                    "nav-link": {
-                        "font-size": "14px",
-                        "text-align": "left",
-                        "margin": "0px",
-                        "padding": "10px",
-                        "--hover-color": "#eee",
-                    },
-                    "nav-link-selected": {"background-color": "#1565C0", "color": "white"},
+def show_main_app():
+    with st.sidebar:
+        st.image(
+            "https://upload.wikimedia.org/wikipedia/commons/9/99/Sample_User_Icon.png?20200919003010",
+            width=80
+        )
+        st.markdown(f"""
+            <div style="text-align: center;">
+                <h4 style="margin-bottom: 0;">Welcome!</h4>
+                <p style="margin-top: 0;">{st.session_state.user_name}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        selected = option_menu(
+            menu_title="MediChat AI",
+            options=["Chat", "History", "Feedback"] + (["Admin"] if st.session_state.user_role == "admin" else []),
+            icons=["chat-dots-fill", "clock-history", "star-fill", "shield-lock-fill"],
+            menu_icon="hospital",
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": "transparent"},
+                "icon": {"color": "#1565C0", "font-size": "16px"},
+                "nav-link": {
+                    "font-size": "14px",
+                    "text-align": "left",
+                    "margin": "0px",
+                    "padding": "12px 16px",
+                    "border-radius": "8px",
+                    "margin-bottom": "4px",
+                    "--hover-color": "var(--shadow-light)",
+                    "color": "var(--text-color)",
                 },
-            )
-            
+                "nav-link-selected": {
+                    "background-color": "#1565C0", 
+                    "color": "white",
+                    "font-weight": "500"
+                },
+            },
+        )
 
-        if selected == "Chat":
-            st.title("MediChat AI Assistant")
-            chat_page()
-            
-        elif selected == "History":
-            st.title("Chat History")
-            from chat.history import display_history
-            display_history()
-        elif selected == "Feedback":
-            st.title("User Feedback")
-            view_user_feedback()
-        else:
-            st.warning("Something went wrong. Please try again.")
+        st.markdown("---")
+        st.markdown("### Session Info")
+        st.markdown(f"**Session ID:** `{st.session_state.get('current_chat_id', 'N/A')[:8]}...`")
+        st.markdown(f"**Messages:** {len(st.session_state.get('messages', []))}")
 
+    if selected == "Chat":
+        chat_page()
+    elif selected == "History":
+        from chat.history import display_history
+        display_history()
+    elif selected == "Feedback":
+        view_user_feedback()
+    elif selected == "Admin":
+        st.title("🔒 Admin Panel")
+        st.info("Admin functionality under construction.")
+    else:
+        st.error("Something went wrong. Please try again.")
 
-main()
+if __name__ == "__main__":
+    main()

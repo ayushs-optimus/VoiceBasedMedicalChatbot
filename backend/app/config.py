@@ -9,13 +9,20 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str
     AZURE_OPENAI_KEY: str
     AZURE_OPENAI_API_VERSION: str
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str
     Azure_OPENAI_ENDPOINT: str
+
+    # Azure OpenAI Embeddings
+    AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT: str
+    AZURE_OPENAI_EMBEDDINGS_KEY: str
+    AZURE_OPENAI_EMBEDDINGS_API_VERSION: str
+    AZURE_OPENAI_EMBEDDINGS_ENDPOINT: str
     
     # Azure AI Search
     AZURE_SEARCH_SERVICE: str
     AZURE_SEARCH_KEY: str
-    AZURE_SEARCH_INDEX: str
+    AZURE_SEARCH_INDEX_1: str
+    AZURE_SEARCH_INDEX_2: str
+    AZURE_SEARCH_ENDPOINT: str
     AZURE_SEARCH_API_VERSION: str
     
     # Azure Blob Storage
@@ -43,8 +50,10 @@ class Settings(BaseSettings):
     # Azure Cosmos DB
     AZURE_COSMOS_DB_ENDPOINT: str
     AZURE_COSMOS_DB_KEY: str
+    AZURE_COSMOS_DB_CHECKPOINTER_CONTAINER: str
+    AZURE_COSMOS_DB_CHAT_HISTORY_CONTAINER: str
     AZURE_COSMOS_DB_DATABASE: str
-    AZURE_COSMOS_DB_CONTAINER: str
+    AZURE_SEARCH_RE_RANKER_VALUE: float = 0.5
     
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

@@ -1,22 +1,22 @@
-import operator
-from typing import Annotated, TypedDict, List, Any, Optional, Dict
+from typing import AsyncGenerator, List, Any, Optional, Dict
 import logging
 from datetime import datetime
-import json
 import os
 from dotenv import load_dotenv
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain.tools import BaseTool
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, MessagesState
+from langgraph.prebuilt import ToolNode
 
 from app.config import get_settings
 from app.services.cosmos_db_handler import CosmosDBHandler
 from app.services.cosmos_db_saver import CosmosDBSaver, JsonPlusSerializerCompat
 from app.agents.tools import get_agent_tools
-
+from app.services.prompts import tool_call_prompt
+import asyncio
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,19 @@ class AgentExecutor:
         self.tools: List[BaseTool] = get_agent_tools()
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
+        # Create tool node for executing tools
+        self.tool_node = ToolNode(self.tools)
+
         self.agent_prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. {system_message}"),
-            ("human", "{question}")
+            ("system", "You are a helpful AI assistant. Use the available tools when needed to help the user."),
+            ("system", tool_call_prompt),
+            ("placeholder", "{messages}")
         ])
 
-        # Place-holder, the compiled graph is set in async init
+
+        # The compiled graph is set in async init
         self.graph = None
+
 
     async def init(self):
         """Async initialization to set up LangGraph."""
@@ -50,158 +56,163 @@ class AgentExecutor:
         logger.info("AgentExecutor async graph setup complete.")
 
     async def _create_agent_graph(self) -> Any:
-        class AgentState(TypedDict):
-            messages: Annotated[List[Any], operator.add]
-            system_message: str
-            user_id: str
-            tool_call: Optional[Dict[str, Any]]
-            tool_result: Optional[Any]
-            tool_history: Annotated[List[Dict[str, Any]], operator.add]
-            output: Optional[str]
-            action_type: Optional[str]
+        """Create a simple agent graph with MessagesState only."""
+        graph = StateGraph(MessagesState)
 
-        graph = StateGraph(AgentState)
+        # Add nodes
+        graph.add_node("agent", self._agent_node)
+        graph.add_node("tools", self.tool_node)
+        graph.add_node("store_chat", self._store_chat_node)
 
-        graph.add_node("brain_node", self._agent_node)
-        graph.add_node("call_tool", self._call_tool_node)
-        graph.add_node("formatter_node", self._formatter_node)
-        graph.add_conditional_edges("formatter_node", self._should_continue, {
-            "continue": "brain_node",
-            "end": END
-        })
+        # Set entry point
+        graph.set_entry_point("agent")
 
-        graph.add_edge("brain_node", "call_tool")
-        graph.add_edge("call_tool", "formatter_node")
-        graph.set_entry_point("brain_node")
+        # Add conditional edges
+        graph.add_conditional_edges(
+            "agent",
+            self._should_continue,
+            {
+                "tools": "tools",
+                "store_chat": "store_chat"
+            }
+        )
+
+        # Tools always go back to agent
+        graph.add_edge("tools", "agent")
+        
+        # Store chat is the final step
+        graph.add_edge("store_chat", END)
+
+        return graph
+
+    async def _agent_node(self, state: MessagesState) -> Dict[str, Any]:
+        """Main agent node that processes messages and decides on actions."""
+        print("Agent node processing messages...")
+        
+        messages = state["messages"]
+        
+        # Format messages for the prompt
+        response = await self.llm_with_tools.ainvoke(
+            self.agent_prompt.format_messages(messages=messages)
+        )
+        
+        # Return the response as a new message
+        return {"messages": [response]}
+
+    def _should_continue(self, state: MessagesState) -> str:
+        """Determine next action based on the last message."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        
+        # If the last message has tool calls, execute tools
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            return "tools"
+        else:
+            # No tool calls, store chat and end
+            return "store_chat"
+
+    async def _store_chat_node(self, state: MessagesState) -> Dict[str, Any]:
+        """Final node to persist chat history."""
+        try:
+            # Find ChatHistoryTool
+            chat_tool = next((tool for tool in self.tools if tool.name == "chat_history_tool"), None)
+            if chat_tool is None:
+                logger.warning("ChatHistoryTool not found.")
+                return {"messages": []}
+
+            messages = state["messages"]
+            
+            # Store the conversation
+            await chat_tool.ainvoke({
+                "messages": messages
+            })
+            
+            logger.info("Chat history stored successfully.")
+
+        except Exception as e:
+            logger.exception(f"Failed to store chat history: {e}")
+
+        # Return empty messages to indicate completion
+        return {"messages": []}
+
+    async def astream(self, input_state: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream the agent execution step by step."""
+        if not self.graph:
+            raise RuntimeError("Graph not initialized. Call await executor.init() before astream().")
+        
+        start_time = datetime.now()
+        last_output = None
 
         async with CosmosDBHandler.from_conn_info(
             database_name=self.settings.AZURE_COSMOS_DB_DATABASE,
-            container_name=self.settings.AZURE_COSMOS_DB_CONTAINER
+            container_name=self.settings.AZURE_COSMOS_DB_CHECKPOINTER_CONTAINER
         ) as handler:
             checkpointer = CosmosDBSaver(handler, serde=JsonPlusSerializerCompat())
-            
-            return graph.compile(checkpointer=checkpointer)
+            compiled_graph = self.graph.compile(checkpointer=checkpointer)
 
-    async def _agent_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        messages = state.get("messages", [])
-        last_user_message = next(
-            (msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage)),
-            None
-        )
+            query = input_state.get("query", [])
+            if isinstance(query, str):
+                initial_messages = [HumanMessage(content=query)]
+            elif isinstance(query, list):
+                initial_messages = query
+            else:
+                initial_messages = [HumanMessage(content=str(query))]
 
-        if not last_user_message:
-            return {**state, "output": "No question found.", "action_type": "answer"}
-
-        prompt = self.agent_prompt.format_messages(
-            system_message=state.get("system_message", "You're a helpful assistant."),
-            conversation=messages,
-            question=last_user_message
-        )
-
-        response = await self.llm_with_tools.ainvoke(prompt)
-
-        if response.tool_calls:
-            tool_call = response.tool_calls[0]
-            return {
-                **state,
-                "agent_response": response.content,
-                "tool_call": {"name": tool_call.name, "input": tool_call.args},
-                "action_type": "tool"
-            }
-        else:
-            return {
-                **state,
-                "output": response.content,
-                "action_type": "answer"
+            state = {
+                "messages": initial_messages
             }
 
-    async def _call_tool_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        if state.get("action_type") != "tool":
-            return state
-
-        tool_call = state.get("tool_call")
-        tool_name = tool_call["name"]
-        tool_input = tool_call["input"]
-
-        chosen_tool = next((tool for tool in self.tools if tool.name == tool_name), None)
-        if not chosen_tool:
-            return {
-                **state,
-                "output": f"Tool '{tool_name}' not found.",
-                "action_type": "answer"
+            config = {
+                "configurable": {
+                    "thread_id": input_state.get("thread_id", "default_thread"),
+                    "session_id": input_state.get("session_id", "default_session")
+                }
             }
+            async for event in compiled_graph.astream_events(state, config=config, version="v2"):
+                ev = event.get("event")
+                data = event.get("data", {})
+                # print(f"Event received: {ev}, Data: {data}")
 
-        try:
-            result = await chosen_tool.ainvoke(tool_input)
-            return {
-                **state,
-                "tool_result": result,
-                "messages": state.get("messages", []) + [
-                    AIMessage(content=f"Tool '{tool_name}' executed. Result: {result}")
-                ],
-                "tool_history": state.get("tool_history", []) + [{
-                    "tool": tool_name, "input": tool_input, "result": result
-                }]
-            }
-        except Exception as e:
-            return {
-                **state,
-                "tool_result": str(e),
-                "messages": state.get("messages", []) + [
-                    AIMessage(content=f"Tool '{tool_name}' failed: {str(e)}")
-                ],
-                "tool_history": state.get("tool_history", []) + [{
-                    "tool": tool_name, "input": tool_input, "error": str(e)
-                }]
-            }
+                # Only handle relevant events
+                if ev not in {"on_chat_model_stream", "on_node_end"}:
+                    continue
 
-    async def _formatter_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        return state  # Simply forward state to the conditional edge
+                messages = []
+                if ev == "on_chat_model_stream":
+                    chunk = data.get("chunk", {})
+                    if isinstance(chunk, dict):
+                        messages = chunk.get("messages", [])
+                    elif hasattr(chunk, "content"):  # likely AIMessageChunk or similar
+                        messages = [AIMessage(content=chunk.content)]
+                    else:
+                        messages = []
 
-    def _should_continue(self, state: Dict[str, Any]) -> str:
-        if state.get("action_type") == "tool" and "tool_result" in state:
-            return "continue"
-        return "end"
 
-    async def ainvoke(self, input_state: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.graph:
-            raise RuntimeError("Graph not initialized. Call await executor.init() before ainvoke().")
+                output = None
+                for msg in reversed(messages):
+                    if isinstance(msg, AIMessage) and msg.content:
+                        output = msg.content
+                        break
 
-        start_time = datetime.now()
+                if not output or output == last_output:
+                    continue
 
-       
-        state = {
-            "messages": input_state.get("messages", []),
-            "system_message": input_state.get("system_message", ""),
-            "user_id": input_state.get("user_id", "unknown"),
-            "tool_history": [],
-            "output": None,
-            "tool_call": None,
-            "tool_result": None,
-            "action_type": None
-        }
+                last_output = output
 
-        config = {
-            "configurable": {
-                "thread_id": input_state.get("thread_id", "default_thread"),
-                "session_id": input_state.get("session_id", "default_session")
-            }
-        }
+                # Extract tool output if present
+                tool_history = [
+                    {"tool": getattr(msg, "name", "unknown"), "result": msg.content}
+                    for msg in messages if isinstance(msg, ToolMessage)
+                ]
 
-        final_state = await self.graph.ainvoke(state,config=config)
-        execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
-
-        output = final_state.get("output")
-        if not output and final_state.get("messages"):
-            last = final_state["messages"][-1]
-            output = last.content if isinstance(last, AIMessage) else "Unable to process."
-
-        return {
-            "output": output,
-            "tool_history": final_state.get("tool_history", []),
-            "execution_time_ms": execution_time_ms,
-            "messages": final_state.get("messages", [])
-        }
+                execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+                # print(f"Yielding output: {output}")
+                yield {
+                    "output": output,
+                    "tool_history": tool_history,
+                    "execution_time_ms": execution_time_ms,
+                    "messages": messages,
+                }
 
 
 # Usage
