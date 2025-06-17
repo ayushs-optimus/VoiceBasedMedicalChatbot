@@ -6,7 +6,6 @@ import json
 from app.schemas.chat import ChatRequest, ChatResponse, ChatMessage
 from app.schemas.auth import User
 from app.auth.dependencies import get_current_user, has_role
-from app.core.rag_engine import get_rag_engine
 from app.agents.graph import get_agent_executor
 
 router = APIRouter(

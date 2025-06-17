@@ -1,4 +1,5 @@
-from typing import AsyncGenerator, List, Any, Optional, Dict
+import operator
+from typing import Annotated, AsyncGenerator, List, Any, Literal, Optional, Dict
 import logging
 from datetime import datetime
 import os
@@ -6,7 +7,7 @@ from dotenv import load_dotenv
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage,BaseMessage
 from langchain.tools import BaseTool
 from langgraph.graph import StateGraph, END, MessagesState
 from langgraph.prebuilt import ToolNode
@@ -21,6 +22,11 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class CustomMessagesState():
+    message: Annotated[List[BaseMessage], operator.add]
+    query_type: Optional[Literal["user_specific", "generic"]] = None
+    filter_query: Optional[str] = None
+
 class AgentExecutor:
     def __init__(self):
         self.settings = get_settings()
@@ -32,8 +38,11 @@ class AgentExecutor:
             azure_endpoint=os.getenv("Azure_OPENAI_ENDPOINT"),
             temperature=0.7
         )
+        self.user_id = None
+        self.session_id = None
+        self.query = None
 
-        self.tools: List[BaseTool] = get_agent_tools()
+        self.tools: List[BaseTool] = get_agent_tools(self.llm,self.user_id, self.session_id,self.query)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
         # Create tool node for executing tools
@@ -41,18 +50,21 @@ class AgentExecutor:
 
         self.agent_prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a helpful AI assistant. Use the available tools when needed to help the user."),
-            ("system", tool_call_prompt),
             ("placeholder", "{messages}")
         ])
 
 
         # The compiled graph is set in async init
         self.graph = None
+        
 
 
     async def init(self):
         """Async initialization to set up LangGraph."""
         self.graph = await self._create_agent_graph()
+        self.user_id = None
+        self.session_id = None
+        self.query = None
         logger.info("AgentExecutor async graph setup complete.")
 
     async def _create_agent_graph(self) -> Any:
@@ -124,7 +136,9 @@ class AgentExecutor:
             
             # Store the conversation
             await chat_tool.ainvoke({
-                "messages": messages
+                "messages": messages,
+                "user_id": self.user_id,
+                "session_id": self.session_id
             })
             
             logger.info("Chat history stored successfully.")
@@ -139,7 +153,14 @@ class AgentExecutor:
         """Stream the agent execution step by step."""
         if not self.graph:
             raise RuntimeError("Graph not initialized. Call await executor.init() before astream().")
-        
+        self.user_id = input_state.get("thread_id", "Unknown")
+        self.session_id = input_state.get("session_id", "Unknown")
+        self.query = input_state.get("query", "No query provided")
+
+        self.tools = get_agent_tools(self.llm, self.user_id, self.session_id, self.query)
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.tool_node = ToolNode(self.tools)
+
         start_time = datetime.now()
         last_output = None
 
@@ -213,6 +234,18 @@ class AgentExecutor:
                     "execution_time_ms": execution_time_ms,
                     "messages": messages,
                 }
+   
+    def print_graph_structure(self):
+        """Prints the ASCII structure of the LangGraph."""
+        if not self.graph:
+            print("Graph is not initialized.")
+            return
+
+        try:
+            print("Graph structure:")
+            self.graph.print_ascii()  # Directly call print_ascii on StateGraph
+        except Exception as e:
+            print(f"Failed to print graph structure: {e}")
 
 
 # Usage
@@ -223,4 +256,5 @@ async def get_agent_executor() -> AgentExecutor:
     if _executor is None:
         _executor = AgentExecutor()
         await _executor.init()
+        _executor.print_graph_structure()
     return _executor
