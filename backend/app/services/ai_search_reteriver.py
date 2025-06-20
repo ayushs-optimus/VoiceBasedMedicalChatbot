@@ -20,25 +20,26 @@ async def get_patient_data(filter_query: str) -> str:
             'api-version': setting.AZURE_SEARCH_API_VERSION
         }
 
-        search_payload = {
-            "search": "*",
-            "filter": filter_query,
-            "select": "*",
-            "top": 5,
+        search_payload_2 ={
+            "search": filter_query,
             "count": True,
-            "queryType": "simple"
+            "queryType": "semantic",
+            "semanticConfiguration": "default-department-config",
+            "captions": "extractive",
+            "answers": "extractive|count-3",
+            "queryLanguage": "en-us",
         }
 
         url = f"{setting.AZURE_SEARCH_ENDPOINT}/indexes/{setting.AZURE_SEARCH_INDEX_2}/docs/search"
 
-        resp = requests.post(url, data=json.dumps(search_payload), headers=headers, params=params)
+        resp = requests.post(url, data=json.dumps(search_payload_2), headers=headers, params=params)
 
         search_results = resp.json()
-        print(f"Search results: {search_results}")
         results = search_results.get("value", [])
+        print(f"Search results: {json.dumps(results, indent=2)}")
 
         if results:
-            return json.dumps(results[0], indent=2)
+            return json.dumps(results, indent=2)
         else:
             return "No patient data found."
 

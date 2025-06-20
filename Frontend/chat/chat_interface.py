@@ -4,7 +4,7 @@ import uuid
 import requests
 import json
 
-API_BASE = "http://localhost:8000/api"
+API_BASE = "https://containermedchat.thankfulsky-358fb2d4.westus2.azurecontainerapps.io/api"
 
 def generate_session():
     if "user_id" not in st.session_state:
@@ -132,34 +132,23 @@ html, body, [data-testid="stApp"] {
     display: flex;
 }
 
-.input-container {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    padding: 10px 16px;
-    background-color: #0e1117;
-    z-index: 10;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.4);
-}
+
 </style>
 
     """, unsafe_allow_html=True)
 
     # Header and controls
-    col1, col2 = st.columns([0.75, 0.25])
-    with col1:
-        st.title("💬 MediChat AI Assistant")
-        st.markdown(f"**Welcome, {st.session_state.get('user_name', 'User')}!**")
-    with col2:
-        if st.button("🔄 New Chat"):
-            st.session_state.current_chat_id = str(uuid.uuid4())
-            st.session_state.messages = []
-            st.rerun()
-        if st.button("🚪 Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+
+    if st.sidebar.button("🔄 Start New Chat"):
+        st.session_state.current_chat_id = str(uuid.uuid4())
+        st.session_state.messages = []
+        st.rerun()
+
+    if st.sidebar.button("🚪 Logout"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+
 
     # Chat display
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)

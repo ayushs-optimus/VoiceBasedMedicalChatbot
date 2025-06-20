@@ -4,7 +4,7 @@ import requests
 import json
 from typing import List, Optional, Type, Any, Callable
 from langchain.tools import BaseTool
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage,BaseMessage
 from langchain.callbacks.manager import CallbackManagerForToolRun
 from langchain.pydantic_v1 import BaseModel, Field
 from applicationinsights import TelemetryClient
@@ -30,12 +30,14 @@ class ChatHistoryInput(BaseModel):
 class PatientIdSearchInput(BaseModel):
     query: str = Field(description="Free-text medical query used to search patients by description embedding")
     llm: Any 
-    patient_id: Optional[str]= Field(description="Patient ID to search for, if available. If not provided, the tool will search based on the query.")
 
+    
 class PatientDataSearchInput(BaseModel):
     query: str = Field(description="Free-text medical query used to search patients by description embedding")
     llm: Any
-    patient_id: List[str] = Field(description="Patient ID to search for, if available. If not provided, the tool will search based on the query.")
+    patient_id : Optional[List[str]] = Field(default_factory=list, description="List of patient IDs to filter the search results")
+
+    
 ### === Tool Implementations === ###
 
 
@@ -51,10 +53,9 @@ class ChatHistoryTool(BaseTool):
 
     async def store_chat_history(self, messages) -> str:
         try:
+            print("chat history tool called", messages)
             async_client = CosmosClientSingleton.get_instance()
             database = await async_client.create_database_if_not_exists(self.database_name)
-            print("User Id:", self.user_id)
-            print("Session Id:", self.session_id)
             container = await database.create_container_if_not_exists(id=self.container_name,partition_key= PartitionKey(path="/id"))
             
 
@@ -81,7 +82,6 @@ class ChatHistoryTool(BaseTool):
             data.append({
                 "messages": messageList
             })
-            print("AI Messages ", msg_content, msg_type , data)
             await container.upsert_item({
                 "id": f"{self.user_id}-{self.session_id}",
                 "user_id": self.user_id,
@@ -103,7 +103,7 @@ class ChatHistoryTool(BaseTool):
         raise NotImplementedError("ChatHistoryTool only supports async usage")
 
 class PatientIdSearchTool(BaseTool):
-    name: str = "patient_search_tool"
+    name: str = "PatientIdSearchTool"
     description: str = "This tool is called to search for a patient_id based on a user specified query. It uses Azure AI Search to find the most relevant patient_id based on the description embedding. call only when there's user query"
     args_schema: Type[BaseModel] = PatientIdSearchInput  
 
@@ -119,33 +119,52 @@ class PatientIdSearchTool(BaseTool):
             }
 
             search_payload = {
-                "queryType": "semantic",
-                "semanticConfiguration": "default-semantic-config", 
                 "search": query,
-                "select": "*",
-                "top": 2,
+                "top": 5,  # ✅ Get only top 5 results
                 "count": True,
-                "captions": "extractive", 
-                "answers": "extractive"
+                "vectorQueries": [
+                    {
+                        "kind": "text",
+                        "text": query,
+                        "fields": "description_vector"
+                    }
+                ],
+                "queryType": "semantic",
+                "semanticConfiguration": "default-semantic-config",
+                "captions": "extractive",
+                "answers": "extractive|count-3",
+                "queryLanguage": "en-us"
             }
 
             url = f"{setting.AZURE_SEARCH_ENDPOINT}/indexes/{setting.AZURE_SEARCH_INDEX_1}/docs/search"
             resp = requests.post(url, data=json.dumps(search_payload), headers=headers, params=params)
+            resp.raise_for_status()  # Ensure exception is raised for HTTP errors
+
             search_results = resp.json()
             results = search_results.get("value", [])
-            cleaned_results = [
-                {k: v for k, v in result.items() if k != "description_vector"}
-                for result in results
+            # print(f"Search results: {json.dumps(results, indent=2)}")
+            # ✅ Filter by score threshold
+            re_ranker_score = 1.5
+            filtered_results = [
+                r for r in results if r.get("@search.rerankerScore", 0) >= re_ranker_score
             ]
-            patient_ids = [result["patient_id"] for result in cleaned_results]
 
-            print(patient_ids)
-            print(f"Search Results: {cleaned_results}")
+            # ✅ Clean output for printing
+            cleaned_results = [
+                {k: v for k, v in r.items() if k != "description_vector"}
+                for r in filtered_results
+            ]
+            # print(f"Search results: {json.dumps(cleaned_results, indent=2)}")
+
+            # ✅ Extract unique patient IDs
+            patient_ids = list({r["patient_id"] for r in filtered_results if "patient_id" in r})
+
             return patient_ids if patient_ids else ["Patient not found."]
+        
         except Exception as ex:
             logger.exception(f"Error during patient search: {ex}")
             return ["Error searching for patient."]
-        
+    
     async def _arun(
         self, query: str,
         run_manager: Optional[CallbackManagerForToolRun] = None
@@ -157,26 +176,36 @@ class PatientIdSearchTool(BaseTool):
         raise NotImplementedError("This tool only supports async usage.")
     
 class PatientDataSearchTool(BaseTool):
-    name: str = "patient_data_search_tool"
+    name: str = "PatientDataSearchTool"
     description: str = "This tool is called to fetch patient data based on the patient_id or other criteria. it will always be called after generating filter query from GenerateFilterQueryTool."
     args_schema: Type[BaseModel] = PatientDataSearchInput  
     llm: Optional[Any] = None
-    async def _arun(self, patient_id: List[str],query: str,run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
+    async def _arun(
+        self,
+        query: str,patient_id: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForToolRun] = None
+    ) -> str:
         try:
-            filter_query = await generate_filter_query(query= query, patient_id=patient_id,roles=["Doctor", "Nurse", "Admin"],llm = self.llm  )
+            filter_query = await generate_filter_query(
+                query=query,
+                patient_id=patient_id,
+                roles=["Doctor", "Nurse", "Admin"],
+                llm=self.llm
+            )
             patient_data = await get_patient_data(filter_query=filter_query)
+            print(f"Patient data: {patient_data}")
             return patient_data
         except Exception as e:
             logger.exception(f"Error in patient data search tool: {e}")
             telemetry_client.track_exception()
             return f"Error fetching patient data: {str(e)}"
-        
+
     def _run(self, *args, **kwargs) -> str:
         raise NotImplementedError("PatientDataSearchTool only supports async usage")
 ### === Tool Registry === ###
 
 
-def get_agent_tools(llm,user_id,session_id,query) -> List[BaseTool]:
+def  get_agent_tools(llm,user_id,session_id,query) -> List[BaseTool]:
     patient_tool = PatientDataSearchTool()
     patient_tool.llm = llm  # Inject LLM manually
 
