@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 220 13% 9%;
+    --card: 220 50% 98%;
+    --card-foreground: 220 13% 9%;
+    --popover: 220 50% 98%;
+    --popover-foreground: 220 13% 9%;
+    --primary: 262 100% 70%;
+    --primary-foreground: 220 50% 98%;
+    --secondary: 220 13% 91%;
+    --secondary-foreground: 220 13% 9%;
+    --muted: 220 13% 91%;
+    --muted-foreground: 220 13% 45%;
+    --accent: 220 13% 91%;
+    --accent-foreground: 220 13% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 50% 98%;
+    --border: 220 13% 87%;
+    --input: 220 13% 87%;
+    --ring: 262 100% 70%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 220 13% 9%;
+    --foreground: 220 50% 98%;
+    --card: 220 13% 9%;
+    --card-foreground: 220 50% 98%;
+    --popover: 220 13% 9%;
+    --popover-foreground: 220 50% 98%;
+    --primary: 262 100% 70%;
+    --primary-foreground: 220 13% 9%;
+    --secondary: 220 13% 18%;
+    --secondary-foreground: 220 50% 98%;
+    --muted: 220 13% 18%;
+    --muted-foreground: 220 13% 63%;
+    --accent: 220 13% 18%;
+    --accent-foreground: 220 50% 98%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 220 50% 98%;
+    --border: 220 13% 18%;
+    --input: 220 13% 18%;
+    --ring: 262 100% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.gradient-aurora {
+  background: linear-gradient(135deg, 
+    hsl(262 100% 70% / 0.1) 0%, 
+    hsl(220 100% 75% / 0.1) 25%,
+    hsl(280 100% 70% / 0.1) 50%,
+    hsl(200 100% 75% / 0.1) 75%,
+    hsl(300 100% 70% / 0.1) 100%
+  );
+}
+
+.gradient-aurora-sidebar {
+  background: linear-gradient(180deg, 
+    hsl(262 100% 70% / 0.05) 0%, 
+    hsl(220 100% 75% / 0.05) 50%,
+    hsl(280 100% 70% / 0.05) 100%
+  );
+}
+
+.message-bubble {
+  transition: all 0.2s ease;
+}
+
+.message-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.chat-input {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-item {
+  transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateX(4px);
+}

@@ -13,9 +13,9 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 AUTHORITY = os.getenv("AUTHORITY")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 
-print("TENANT_ID:", TENANT_ID)
-print("CLIENT_ID:", CLIENT_ID)
-print("AUTHORITY:", AUTHORITY)
+# print("TENANT_ID:", TENANT_ID)
+# print("CLIENT_ID:", CLIENT_ID)
+# print("AUTHORITY:", AUTHORITY)
 SCOPE = ["User.Read"] # Include User.Read if you still need to fetch user info from Graph
 
 def get_msal_app():
@@ -41,7 +41,8 @@ def get_token_from_code(auth_code):
         redirect_uri=REDIRECT_URI,
     )
     if "access_token" in result:
-        print("Raw Access Token from MSAL:", result["access_token"]) # <-- ADD THIS LINE
+        # print("Raw Access Token from MSAL:", result["access_token"]) # <-- ADD THIS LINE
+        print("Access Token successfully acquired.")
     return result
 
 def get_user_info(access_token):
@@ -53,12 +54,13 @@ def get_user_info(access_token):
     graph_endpoint = "https://graph.microsoft.com/v1.0/me"
     headers = {'Authorization': f'Bearer {access_token}'}
     user_data = requests.get(graph_endpoint, headers=headers).json()
+    print(user_data)
     return user_data
 
 def login_page():
     st.title("Login with Microsoft")
 
-    print("Login page accessed", st.session_state)
+    # print("Login page accessed", st.session_state)
     query_params = st.experimental_get_query_params()
     if "code" in query_params:
         auth_code = query_params["code"][0]
