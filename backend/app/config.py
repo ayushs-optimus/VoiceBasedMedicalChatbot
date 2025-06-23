@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
@@ -9,13 +10,20 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str
     AZURE_OPENAI_KEY: str
     AZURE_OPENAI_API_VERSION: str
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str
-    Azure_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_ENDPOINT: str
+
+    # Azure OpenAI Embeddings
+    AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT: str
+    AZURE_OPENAI_EMBEDDINGS_KEY: str
+    AZURE_OPENAI_EMBEDDINGS_API_VERSION: str
+    AZURE_OPENAI_EMBEDDINGS_ENDPOINT: str
     
     # Azure AI Search
     AZURE_SEARCH_SERVICE: str
     AZURE_SEARCH_KEY: str
-    AZURE_SEARCH_INDEX: str
+    AZURE_SEARCH_INDEX_1: str
+    AZURE_SEARCH_INDEX_2: str
+    AZURE_SEARCH_ENDPOINT: str
     AZURE_SEARCH_API_VERSION: str
     
     # Azure Blob Storage
@@ -43,9 +51,17 @@ class Settings(BaseSettings):
     # Azure Cosmos DB
     AZURE_COSMOS_DB_ENDPOINT: str
     AZURE_COSMOS_DB_KEY: str
+    AZURE_COSMOS_DB_CHECKPOINTER_CONTAINER: str
+    AZURE_COSMOS_DB_CHAT_HISTORY_CONTAINER: str
     AZURE_COSMOS_DB_DATABASE: str
-    AZURE_COSMOS_DB_CONTAINER: str
-    
+    AZURE_SEARCH_RE_RANKER_VALUE: float = 0.5
+
+    #LangSmith
+    LANGSMITH_TRACING : bool 
+    LANGSMITH_ENDPOINT : str
+    LANGSMITH_API_KEY : str
+    LANGSMITH_PROJECT: str
+
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):
@@ -66,7 +82,8 @@ class Settings(BaseSettings):
         return f"https://{self.AZURE_SEARCH_SERVICE}.search.windows.net"
     
     class Config:
-        env_file = ".env"
+        env_file = Path(__file__).parent / ".env"
+        print("Loading settings from:", env_file)
         case_sensitive = True
 
 @lru_cache()

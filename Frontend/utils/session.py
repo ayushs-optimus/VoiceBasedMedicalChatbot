@@ -2,7 +2,7 @@ import streamlit as st
 
 def initialize_session_state():
     """Initialize session state variables."""
-    print("Initializing session state variables")
+    # print("Initializing session state variables")
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     
@@ -27,4 +27,4 @@ def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    print("Session state initialized:", st.session_state)
+    # print("Session state initialized:", st.session_state)

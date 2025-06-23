@@ -100,21 +100,21 @@ class AzureADAuth:
                     padded_e = self._pad_base64_string(raw_e)
                     padded_n = self._pad_base64_string(raw_n)
 
-                    print(f"Original e: {raw_e}")
-                    print(f"Padded e: {padded_e}")
-                    print(f"Original n: {raw_n}")
-                    print(f"Padded n: {padded_n}")
+                    # print(f"Original e: {raw_e}")
+                    # print(f"Padded e: {padded_e}")
+                    # print(f"Original n: {raw_n}")
+                    # print(f"Padded n: {padded_n}")
 
                     try:
                         decoded_e_bytes = urlsafe_b64decode(padded_e)
                         decoded_n_bytes = urlsafe_b64decode(padded_n)
-                        print(f"Decoded e bytes (hex): {decoded_e_bytes.hex()}")
-                        print(f"Decoded n bytes (hex): {decoded_n_bytes.hex()}")
+                        # print(f"Decoded e bytes (hex): {decoded_e_bytes.hex()}")
+                        # print(f"Decoded n bytes (hex): {decoded_n_bytes.hex()}")
 
                         exponent = int.from_bytes(decoded_e_bytes, byteorder="big")
                         modulus = int.from_bytes(decoded_n_bytes, byteorder="big")
-                        print(f"Converted exponent (int): {exponent}")
-                        print(f"Converted modulus (int) first 20 digits: {str(modulus)[:20]}...") # Modulus is very long
+                        # print(f"Converted exponent (int): {exponent}")
+                        # print(f"Converted modulus (int) first 20 digits: {str(modulus)[:20]}...") # Modulus is very long
                     except Exception as decode_error:
                         logger.error(f"Error during base64 decoding or int conversion: {decode_error}", exc_info=True)
                         return None # Fail early if decoding fails
@@ -126,10 +126,10 @@ class AzureADAuth:
                         encoding=serialization.Encoding.PEM,
                         format=serialization.PublicFormat.SubjectPublicKeyInfo
                     )
-                    print(f"Successfully created RSA public key for kid: {kid}")
-                    print("\n--- Generated RSA Public Key (PEM format) ---")
-                    print(public_pem.decode('utf-8'))
-                    print("-------------------------------------------\n")
+                    # print(f"Successfully created RSA public key for kid: {kid}")
+                    # print("\n--- Generated RSA Public Key (PEM format) ---")
+                    # print(public_pem.decode('utf-8'))
+                    # print("-------------------------------------------\n")
 
                     return rsa_public_key
             logger.warning(f"No matching public key found in JWKS for kid: {kid}. Available kids: {[k.get('kid') for k in jwks.get('keys', []) if k.get('kid')]}")

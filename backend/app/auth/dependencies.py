@@ -8,7 +8,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")  # Adjust if needed
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     """Get the current authenticated user"""
-    print(f"Validating token: {token}")
+    # print(f"Validating token: {token}")
     auth_client = get_auth_client()
     user_info = await auth_client.validate_access_token(token)
 
@@ -22,7 +22,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 def has_role(required_roles: List[str]):
     """Returns a dependency that ensures the user has one of the required roles"""
     async def role_checker(current_user: User = Depends(get_current_user)):
-        print(f"Checking roles: {required_roles}")
+        # print(f"Checking roles: {required_roles}")
         user_roles = set(current_user.roles)
         if not user_roles.intersection(required_roles):
             raise HTTPException(
