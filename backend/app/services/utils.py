@@ -16,12 +16,12 @@ def get_message_type_and_content(msg):
 async def generate_filter_query(
     query: str,
     patient_id: Optional[List[str]],
-    roles: List[str],
+    roles: Optional[List[str]],
     llm: Any
 ) -> str:    
-    roles_str = ', '.join([f"'{r}'" for r in roles])
+    roles_str = ', '.join([f"'{r}'" for r in roles if r]) if roles else "[]"
     prompt = filter_query_prompt + f"\n\nUser Query:\n{query}\n\nRoles: {roles_str}. patient_id: {patient_id}"
-    
+    print("user roles for filter query:", roles_str)
     try:
         response = await llm.ainvoke(prompt)
         return response.content.strip()

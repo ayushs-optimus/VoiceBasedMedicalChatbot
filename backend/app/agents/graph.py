@@ -76,8 +76,9 @@ class AgentExecutor:
         self.user_id = None
         self.session_id = None
         self.query = None
+        self.user_roles = None
 
-        self.tools: List[BaseTool] = get_agent_tools(self.llm, self.user_id, self.session_id, self.query)
+        self.tools: List[BaseTool] = get_agent_tools(self.llm, self.user_id, self.session_id, self.query,self.user_roles)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
         # Create tool node for executing tools
@@ -405,8 +406,8 @@ class AgentExecutor:
         self.user_id = input_state.get("thread_id", "Unknown")
         self.session_id = input_state.get("session_id", "Unknown")
         self.query = input_state.get("query", "No query provided")
-
-        self.tools: List[BaseTool] = get_agent_tools(self.llm, self.user_id, self.session_id, self.query)
+        self.user_roles = input_state.get("user_roles", [])
+        self.tools: List[BaseTool] = get_agent_tools(self.llm, self.user_id, self.session_id, self.query,self.user_roles)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         self.tool_node = ToolNode(self.tools)
 

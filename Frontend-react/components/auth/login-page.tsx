@@ -32,9 +32,10 @@ export function LoginPage() {
         },
         accessToken: result.accessToken
       };
-
       login(userSession); // Store in localStorage + context
-      console.log("Login successful, session stored.");
+      console.log("Login successful, session stored.", result.idTokenClaims);
+      // const roles = result.idTokenClaims?.roles || [];
+      // console.log("User roles:", roles);
       // router.push('/'); // Redirect to home page after login
     } catch (err) {
       console.error('Login failed:', err);

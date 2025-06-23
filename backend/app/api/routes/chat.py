@@ -37,6 +37,7 @@ async def chat_completions_streaming(
                 "user_role": current_user.roles,
                 "thread_id": request.user_id or "Unknown",
                 "session_id": request.session_id or "Unknown",
+                "user_roles": request.roles,
             }):
                 # Extract core message from result
                 output = result.get("output", "No response yet.")

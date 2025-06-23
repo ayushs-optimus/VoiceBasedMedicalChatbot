@@ -36,7 +36,7 @@ class PatientDataSearchInput(BaseModel):
     query: str = Field(description="Free-text medical query used to search patients by description embedding")
     llm: Any
     patient_id : Optional[List[str]] = Field(default_factory=list, description="List of patient IDs to filter the search results")
-
+    user_roles: Optional[List[str]] = Field(default_factory=list, description="Roles of the user making the request")
     
 ### === Tool Implementations === ###
 
@@ -120,7 +120,7 @@ class PatientIdSearchTool(BaseTool):
 
             search_payload = {
                 "search": query,
-                "top": 5,  # ✅ Get only top 5 results
+                "top": 1,  # ✅ Get only top 5 results
                 "count": True,
                 "vectorQueries": [
                     {
@@ -180,6 +180,7 @@ class PatientDataSearchTool(BaseTool):
     description: str = "This tool is called to fetch patient data based on the patient_id or other criteria. it will always be called after generating filter query from GenerateFilterQueryTool."
     args_schema: Type[BaseModel] = PatientDataSearchInput  
     llm: Optional[Any] = None
+    user_roles: Optional[List[str]] = Field(default_factory=list, description="Roles of the user making the request")
     async def _arun(
         self,
         query: str,patient_id: Optional[List[str]] = None,
@@ -189,10 +190,10 @@ class PatientDataSearchTool(BaseTool):
             filter_query = await generate_filter_query(
                 query=query,
                 patient_id=patient_id,
-                roles=["Doctor", "Nurse", "Admin"],
+                roles=self.user_roles,
                 llm=self.llm
             )
-            patient_data = await get_patient_data(filter_query=filter_query)
+            patient_data = await get_patient_data(query=query,filter_query=filter_query)
             print(f"Patient data: {patient_data}")
             return patient_data
         except Exception as e:
@@ -205,10 +206,10 @@ class PatientDataSearchTool(BaseTool):
 ### === Tool Registry === ###
 
 
-def  get_agent_tools(llm,user_id,session_id,query) -> List[BaseTool]:
+def  get_agent_tools(llm,user_id,session_id,query,user_roles) -> List[BaseTool]:
     patient_tool = PatientDataSearchTool()
     patient_tool.llm = llm  # Inject LLM manually
-
+    patient_tool.user_roles = user_roles  # Inject user roles
     chat_history_tool = ChatHistoryTool()
     chat_history_tool.user_id = user_id
     chat_history_tool.session_id = session_id
