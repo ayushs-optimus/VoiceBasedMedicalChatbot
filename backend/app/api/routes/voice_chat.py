@@ -14,7 +14,7 @@ from app.schemas.voice_models import (
     TranscriptionMessage
 )
 from app.services.voice_service import VoiceService
-from app.services.websocket_manager import VoiceWebSocketManager
+from app.services.websocket_manager import WebSocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,26 +22,22 @@ router = APIRouter(prefix="/voice", tags=["voice-chat"])
 
 # Initialize services
 voice_service = VoiceService()
-websocket_manager = VoiceWebSocketManager()
+websocket_manager = WebSocketManager()
+
 
 @router.post("/transcribe", response_model=VoiceResponse)
 async def process_transcription(request: VoiceTranscriptionRequest):
-    """
-    Process voice transcription similar to existing chat endpoint
-    Can be used for non-streaming voice interactions
-    """
     try:
-        # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
-        
-        # Process transcription through your existing LangGraph flow
+
         response = await voice_service.process_transcription(
             text=request.text,
             session_id=session_id,
             user_id=request.user_id,
-            is_final=request.is_final
+            is_final=request.is_final,
+            user_roles=request.user_roles if hasattr(request, 'user_roles') else []
         )
-        
+
         return VoiceResponse(
             session_id=session_id,
             response_text=response["text"],
@@ -49,34 +45,29 @@ async def process_transcription(request: VoiceTranscriptionRequest):
             timestamp=datetime.now(),
             metadata=response.get("metadata", {})
         )
-        
+
     except Exception as e:
         logger.error(f"Error processing transcription: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stream")
 async def stream_voice_response(request: VoiceStreamRequest):
-    """
-    Streaming voice response similar to your existing chat streaming
-    """
     try:
         session_id = request.session_id or str(uuid.uuid4())
-        
+
         async def generate_voice_stream():
             try:
-                # Use your existing streaming logic but adapted for voice
                 async for chunk in voice_service.stream_voice_response(
                     text=request.text,
                     session_id=session_id,
-                    user_id=request.user_id
+                    user_id=request.user_id,
+                    user_roles=request.user_roles if hasattr(request, 'user_roles') else []
                 ):
-                    # Format similar to your existing chat stream format
                     yield f"data: {json.dumps(chunk)}\n\n"
-                    
             except Exception as e:
                 logger.error(f"Error in voice streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        
+
         return StreamingResponse(
             generate_voice_stream(),
             media_type="text/plain",
@@ -86,11 +77,12 @@ async def stream_voice_response(request: VoiceStreamRequest):
                 "Access-Control-Allow-Origin": "*",
             }
         )
-        
+
     except Exception as e:
         logger.error(f"Error setting up voice stream: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# WebSocket Endpoint
 @router.websocket("/ws/{session_id}")
 async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket_manager.connect(websocket, session_id)
@@ -103,14 +95,14 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
 
             try:
                 message_data = json.loads(data)
+                print(f"Parsed message data: {message_data}")
+                print("session_id:", session_id)
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error: {e}")
                 await websocket_manager.send_error(websocket, "Invalid JSON format")
                 continue
 
             msg_type = message_data.get("type")
-            msg_data = message_data.get("data", {})
-
             logger.info(f"Received voice message: {msg_type}")
 
             if msg_type == "transcription":
@@ -134,23 +126,24 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
         logger.exception(f"Error in voice WebSocket for session {session_id}: {e}")
         await websocket_manager.send_error(websocket, str(e))
 
+# ⬇️ Updated with roles
 async def handle_voice_transcription(websocket: WebSocket, message_data: dict, session_id: str):
-    """Handle incoming voice transcription messages"""
     try:
         transcription_data = message_data["data"]
-        
-        # Process through your existing LangGraph flow
+        user_roles = transcription_data.get("user_roles", [])
+        user_id = transcription_data.get("user_id")
+
         if transcription_data.get("isFinal", False):
             user_text = transcription_data["text"]
             logger.info(f"Processing final voice transcription: {user_text}")
-            
-            # Use your existing AI service but adapted for voice
+
             ai_response = await voice_service.generate_voice_response(
                 text=user_text,
-                session_id=session_id
+                session_id=session_id,
+                user_id=user_id,
+                user_roles=user_roles
             )
-            
-            # Send response back to client
+
             await websocket_manager.send_message(
                 websocket,
                 {
@@ -163,12 +156,10 @@ async def handle_voice_transcription(websocket: WebSocket, message_data: dict, s
                     }
                 }
             )
-            
             logger.info(f"Sent voice AI response for session: {session_id}")
         else:
-            # Handle interim transcription results
             logger.debug(f"Interim voice transcription: {transcription_data['text']}")
-            
+
     except Exception as e:
         logger.error(f"Error handling voice transcription: {str(e)}")
         await websocket_manager.send_error(websocket, f"Error processing voice: {str(e)}")

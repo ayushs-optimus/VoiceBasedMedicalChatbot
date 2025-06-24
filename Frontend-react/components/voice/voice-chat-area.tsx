@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { VoiceMessage } from '@/types/voice';
 import { useSession } from '@/hooks/use-session';
-import { 
-  Bot, 
+import {
+  Bot,
   Mic,
   Play,
   Pause,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState } from 'react';
+import { NavModeToggle } from '@/components/ui/navigation';
 
 interface VoiceChatAreaProps {
   messages: VoiceMessage[];
@@ -32,7 +33,6 @@ export function VoiceChatArea({
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
 
   const playAudio = (audioUrl: string, messageId: string) => {
-    // Mock audio playback - in real implementation, use HTML5 Audio API
     setPlayingAudio(messageId);
     setTimeout(() => {
       setPlayingAudio(null);
@@ -41,7 +41,8 @@ export function VoiceChatArea({
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center gradient-aurora">
+      <div className="h-full flex flex-col items-center justify-center gradient-aurora pt-20">
+        <NavModeToggle />
         <div className="text-center">
           <div className="p-6 rounded-full bg-primary/10 mx-auto mb-4 w-fit">
             <Sparkles className="h-12 w-12 text-primary" />
@@ -62,8 +63,9 @@ export function VoiceChatArea({
   }
 
   return (
-    <div className="flex-1 flex flex-col gradient-aurora">
-      <ScrollArea className="flex-1 p-6">
+    <div className="h-full flex flex-col gradient-aurora">
+      <NavModeToggle />
+      <ScrollArea className="flex-1 p-6 pt-24">
         <div className="max-w-4xl mx-auto space-y-6">
           {messages.map((message) => (
             <div
@@ -77,7 +79,7 @@ export function VoiceChatArea({
                   </AvatarFallback>
                 </Avatar>
               )}
-              
+
               <Card className={`p-4 max-w-2xl ${
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground'
@@ -86,8 +88,7 @@ export function VoiceChatArea({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    
-                    {/* Audio Controls for AI responses */}
+
                     {message.role === 'assistant' && message.audioUrl && (
                       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/50">
                         <Button
@@ -97,18 +98,21 @@ export function VoiceChatArea({
                           disabled={playingAudio === message.id}
                         >
                           {playingAudio === message.id ? (
-                            <Pause className="h-4 w-4 mr-2" />
+                            <>
+                              <Pause className="h-4 w-4 mr-2" /> Playing...
+                            </>
                           ) : (
-                            <Play className="h-4 w-4 mr-2" />
+                            <>
+                              <Play className="h-4 w-4 mr-2" /> Play Response
+                            </>
                           )}
-                          {playingAudio === message.id ? 'Playing...' : 'Play Response'}
                         </Button>
                         <Volume2 className="h-4 w-4 text-muted-foreground" />
                       </div>
                     )}
                   </div>
                 </div>
-                
+
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/20">
                   <div className="flex items-center gap-1">
                     {message.role === 'user' ? (
@@ -131,8 +135,7 @@ export function VoiceChatArea({
               )}
             </div>
           ))}
-          
-          {/* Recording Indicator */}
+
           {isRecording && (
             <div className="flex gap-4 justify-end">
               <Card className="bg-primary/10 border-primary/20 p-4 max-w-2xl">

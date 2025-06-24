@@ -7,42 +7,63 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bot, Microscope as Microsoft } from 'lucide-react';
 import { useSessionContext } from '../providers/session-provider';
+import { Session } from 'inspector';
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
 // import { useRouter } from 'next/navigation';
 export function LoginPage() {
   const { login } = useSessionContext();
   const { instance } = useMsal();
   const [isLoading, setIsLoading] = useState(false);
   // const router = useRouter();
-  const handleMicrosoftLogin = async () => {
-    setIsLoading(true);
-    try {
-      const result = await instance.loginPopup(loginRequest);
+ const handleMicrosoftLogin = async () => {
+  setIsLoading(true);
+  try {
+    console.log("Starting Microsoft login...");
 
-      if (!result.account) {
-        throw new Error("No account returned from login.");
-      }
+    let result;
 
-      // Create your session object
-      const userSession = {
-        user: {
-          id: result.account.homeAccountId, // or localAccountId
-          name: result.account.name || '',
-          email: result.account.username || '',
-          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(result.account.name || 'User')}`
-        },
-        accessToken: result.accessToken
-      };
-      login(userSession); // Store in localStorage + context
-      console.log("Login successful, session stored.", result.idTokenClaims);
-      // const roles = result.idTokenClaims?.roles || [];
-      // console.log("User roles:", roles);
-      // router.push('/'); // Redirect to home page after login
-    } catch (err) {
-      console.error('Login failed:', err);
-    } finally {
-      setIsLoading(false);
+    // If no active account, skip silent and go straight to login
+    const accounts = instance.getAllAccounts();
+
+    if (accounts.length === 0) {
+      // Not logged in yet, show login popup
+      result = await instance.loginPopup(loginRequest);
+      instance.setActiveAccount(result.account);
+      console.log("Login successful.");
+    } else {
+      // Already logged in, try silent first
+      result = await instance.acquireTokenSilent({
+        ...loginRequest,
+        account: accounts[0] // ✅ specify the account
+      });
     }
-  };
+
+    if (!result.account) {
+      throw new Error("No account returned from login.");
+    }
+
+    const userSession = {
+      user: {
+        id: result.account.homeAccountId,
+        name: result.account.name || '',
+        email: result.account.username || '',
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(result.account.name || 'User')}`,
+        roles: result.account.idTokenClaims?.roles || [] // ✅ Add roles here
+      },
+      accessToken: result.accessToken
+    };
+
+    console.log("User session created: %o", userSession);
+    instance.setActiveAccount(result.account); // ✅ set active account globally
+    console.log("Active account set:", result.account.idTokenClaims?.roles);
+    login(userSession);
+  } catch (err) {
+    console.error("Login failed:", err);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen flex items-center justify-center gradient-aurora p-4">

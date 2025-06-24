@@ -85,7 +85,7 @@ class AgentExecutor:
         self.tool_node = ToolNode(self.tools)
 
         self.agent_prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. Use the available tools when needed to help the user."),
+            ("system", "You are a helpful AI assistant. Use the available tools when needed to help the user. but this chatbot has role based access control on the data so some users might not be able to get the data from azure ai search in that case please say to them that you don't have access to this type of data."),
             ("placeholder", "{messages}")
         ])
 

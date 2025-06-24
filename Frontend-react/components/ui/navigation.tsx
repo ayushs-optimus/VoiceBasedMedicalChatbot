@@ -1,39 +1,36 @@
+// components/nav-mode-toggle.tsx
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { MessageSquare, Mic } from 'lucide-react';
+import { MessageSquare, Music } from 'lucide-react';
 
-export function Navigation() {
+export function NavModeToggle() {
+  const router = useRouter();
   const pathname = usePathname();
 
+  const isTextChat = pathname.includes('/text') || pathname === '/';
+
   return (
-    <nav className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
-      <div className="flex items-center gap-2 bg-card/80 backdrop-blur-sm border border-border rounded-full p-1">
+    <div className="flex justify-center mb-4">
+      <div className="bg-background border border-border rounded-full px-4 py-2 flex gap-2">
         <Button
-          asChild
-          variant={pathname === '/' ? 'default' : 'ghost'}
+          variant={isTextChat ? 'outline' : 'ghost'}
           size="sm"
-          className="rounded-full"
+          className={isTextChat ? 'text-primary font-medium' : 'text-muted-foreground'}
+          onClick={() => router.push('/')}
         >
-          <Link href="/">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Text Chat
-          </Link>
+          <MessageSquare className="h-4 w-4 mr-2" /> Text Chat
         </Button>
         <Button
-          asChild
-          variant={pathname === '/voice' ? 'default' : 'ghost'}
+          variant={!isTextChat ? 'outline' : 'ghost'}
           size="sm"
-          className="rounded-full"
+          className={!isTextChat ? 'text-primary font-medium' : 'text-muted-foreground'}
+          onClick={() => router.push('/voice')}
         >
-          <Link href="/voice">
-            <Mic className="h-4 w-4 mr-2" />
-            Voice Chat
-          </Link>
+          <Music className="h-4 w-4 mr-2" /> Voice Chat
         </Button>
       </div>
-    </nav>
+    </div>
   );
 }

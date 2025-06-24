@@ -12,7 +12,6 @@ export function ChatInterface() {
   const { session } = useSession();
 
   useEffect(() => {
-    // Load conversations from localStorage
     const savedConversations = localStorage.getItem('chatai_conversations');
     if (savedConversations) {
       try {
@@ -28,7 +27,6 @@ export function ChatInterface() {
   }, []);
 
   useEffect(() => {
-    // Save conversations to localStorage
     localStorage.setItem('chatai_conversations', JSON.stringify(conversations));
   }, [conversations]);
 
@@ -40,20 +38,20 @@ export function ChatInterface() {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    
     setConversations(prev => [newConversation, ...prev]);
     setActiveConversationId(newConversation.id);
+    return newConversation;
   };
 
   const updateConversation = (conversationId: string, messages: Message[]) => {
-    setConversations(prev => 
-      prev.map(conv => 
-        conv.id === conversationId 
-          ? { 
-              ...conv, 
-              messages, 
+    setConversations(prev =>
+      prev.map(conv =>
+        conv.id === conversationId
+          ? {
+              ...conv,
+              messages,
               updatedAt: new Date(),
-              title: messages.length > 0 ? messages[0].content.slice(0, 50) + '...' : 'New Conversation'
+              title: messages.length > 0 ? messages[0].content.slice(0, 50) + '...' : 'New Conversation',
             }
           : conv
       )
@@ -70,6 +68,79 @@ export function ChatInterface() {
 
   const activeConversation = conversations.find(conv => conv.id === activeConversationId);
 
+  const handleSendMessage = async (promptOverride?: string) => {
+    const userInput = (promptOverride ?? '').toString().trim();
+    if (!userInput) return;
+
+    let conv = activeConversation;
+    if (!conv) {
+      conv = createNewConversation();
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: userInput,
+      role: 'user',
+      timestamp: new Date(),
+    };
+
+    const newMessages = [...(conv?.messages || []), userMessage];
+    updateConversation(conv.id, newMessages);
+
+    try {
+      const controller = new AbortController();
+      const response = await fetch('https://containermedchat.thankfulsky-358fb2d4.westus2.azurecontainerapps.io/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.accessToken || ''}`,
+        },
+        body: JSON.stringify({
+          query: userInput,
+          user_id: session?.user.id,
+          session_id: conv.id,
+          stream: true,
+          roles: session?.user.roles || [],
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) throw new Error(`API error: ${response.statusText}`);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: '',
+        role: 'assistant',
+        timestamp: new Date(),
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+
+        chunk.split('\n').forEach(line => {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') return;
+
+            try {
+              const json = JSON.parse(data);
+              if (json.content) {
+                aiMessage.content += json.content;
+                updateConversation(conv!.id, [...newMessages, aiMessage]);
+              }
+            } catch {}
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Streaming error', err);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar
@@ -84,6 +155,7 @@ export function ChatInterface() {
         conversation={activeConversation}
         onUpdateConversation={updateConversation}
         onNewConversation={createNewConversation}
+        onSendPrompt={handleSendMessage}
       />
     </div>
   );
