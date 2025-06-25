@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState } from 'react';
-import { NavModeToggle } from '@/components/ui/navigation';
+
 
 interface VoiceChatAreaProps {
   messages: VoiceMessage[];
@@ -41,14 +41,13 @@ export function VoiceChatArea({
 
   if (messages.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gradient-aurora pt-20">
-        <NavModeToggle />
+      <div className="flex-1 flex flex-col items-center justify-center gradient-aurora">
         <div className="text-center">
-          <div className="p-6 rounded-full bg-primary/10 mx-auto mb-4 w-fit">
+          <div className="rounded-full bg-primary/10 mx-auto mb-4 w-fit">
             <Sparkles className="h-12 w-12 text-primary" />
           </div>
           <h2 className="text-2xl font-bold mb-2">Voice Chat Ready</h2>
-          <p className="text-muted-foreground mb-6 max-w-md">
+          <p className="text-muted-foreground mb-2 max-w-md">
             Start speaking to begin your voice conversation with AI. Your speech will be transcribed in real-time.
           </p>
           <div className="flex items-center justify-center gap-2">
@@ -64,7 +63,6 @@ export function VoiceChatArea({
 
   return (
     <div className="h-full flex flex-col gradient-aurora">
-      <NavModeToggle />
       <ScrollArea className="flex-1 p-6 pt-24">
         <div className="max-w-4xl mx-auto space-y-6">
           {messages.map((message) => (

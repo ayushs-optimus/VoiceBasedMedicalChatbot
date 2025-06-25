@@ -25,7 +25,6 @@ const prompts = [
 export function QuickPrompts() {
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 text-center">
-      <h2 className="text-2xl font-bold mb-6">What can I help with?</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md">
         {prompts.map((prompt, i) => (
           <div

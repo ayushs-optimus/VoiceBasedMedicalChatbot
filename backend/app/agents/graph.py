@@ -326,7 +326,7 @@ class AgentExecutor:
     async def _agent_node(self, state: CustomMessagesState) -> CustomMessagesState:
         # print("Agent node processing messages...", state)
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful ai assistant, please do no use your internal knowledge, "
+            ("system", "You are a helpful ai assistant, please do no use your internal knowledge, and there is a role assigned to every user and he only has access to the data based on his role so if he ask for the data which is not found from tools that means he does not have access to that data so tell him that he does not have access to that data "
             "responsible for generating response based on the input"),
             ("human", """
             UserQuery:{UserQuery}

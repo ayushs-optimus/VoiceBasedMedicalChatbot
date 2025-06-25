@@ -8,6 +8,7 @@ import { useWebSocket } from '@/hooks/use-websocket';
 import { useVoiceRecognition } from '@/hooks/use-voice-recognition';
 import { TranscriptionEntry, VoiceMessage } from '@/types/voice';
 import { useSession } from '@/hooks/use-session';
+import { NavModeToggle } from '@/components/ui/navigation';
 
 export function VoiceChatInterface() {
   const { session } = useSession(); // ✅ call hook at the top level
@@ -199,6 +200,7 @@ export function VoiceChatInterface() {
         onClear={clearTranscriptions}
       />
       <div className="flex-1 flex flex-col">
+        <NavModeToggle />
         <VoiceChatArea
           messages={messages}
           isRecording={isRecording}

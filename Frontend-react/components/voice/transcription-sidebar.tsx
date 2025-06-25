@@ -35,7 +35,7 @@ export function TranscriptionSidebar({
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2 mb-4">
           <Bot className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-bold">Voice Chat</h1>
+          <h1 className="text-xl font-bold">MediChat A.I+</h1>
         </div>
         
         <div className="flex items-center justify-between">

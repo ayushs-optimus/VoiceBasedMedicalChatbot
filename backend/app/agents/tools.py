@@ -194,7 +194,7 @@ class PatientDataSearchTool(BaseTool):
                 llm=self.llm
             )
             patient_data = await get_patient_data(query=query,filter_query=filter_query)
-            print(f"Patient data: {patient_data}")
+            # print(f"Patient data: {patient_data}")
             return patient_data
         except Exception as e:
             logger.exception(f"Error in patient data search tool: {e}")

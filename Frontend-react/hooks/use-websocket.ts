@@ -31,8 +31,8 @@ export function useWebSocket(path: string, options: UseWebSocketOptions = {}) {
   const url = useRef<string | null>(null);
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'wss';
-      const host = "containermedchat.thankfulsky-358fb2d4.westus2.azurecontainerapps.io";
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const host = "localhost:8000"; // Replace with your backend host
       url.current = `${protocol}://${host}${path}`;
       connect();
     }

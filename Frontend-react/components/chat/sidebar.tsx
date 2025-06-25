@@ -26,7 +26,7 @@ interface SidebarProps {
   conversations: Conversation[];
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
-  onNewConversation: () => void;
+  onNewConversation: () => Conversation;
   onDeleteConversation: (id: string) => void;
   user?: {
     id: string;
@@ -72,7 +72,7 @@ export function Sidebar({
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2 mb-4">
           <Bot className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-bold">Medichat</h1>
+          <h1 className="text-xl font-bold">MediChat A.I+</h1>
         </div>
         
         <Button 

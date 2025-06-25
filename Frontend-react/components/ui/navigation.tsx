@@ -12,7 +12,7 @@ export function NavModeToggle() {
   const isTextChat = pathname.includes('/text') || pathname === '/';
 
   return (
-    <div className="flex justify-center mb-4">
+    <div className="flex justify-center py-2 gradient-aurora">
       <div className="bg-background border border-border rounded-full px-4 py-2 flex gap-2">
         <Button
           variant={isTextChat ? 'outline' : 'ghost'}
