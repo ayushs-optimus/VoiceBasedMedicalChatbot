@@ -20,18 +20,20 @@ import {
   MoreVertical
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { stringify } from 'node:querystring';
 
 interface SidebarProps {
   conversations: Conversation[];
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
-  onNewConversation: () => void;
+  onNewConversation: () => Conversation;
   onDeleteConversation: (id: string) => void;
   user?: {
     id: string;
     name: string;
     email: string;
     avatar?: string;
+    roles?: string[]; // Optional roles for the user
   };
 }
 
@@ -50,15 +52,19 @@ export function Sidebar({
     conv.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getTimeAgo = (date: Date) => {
-    const now = new Date();
-    const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffInDays === 0) return 'Today';
-    if (diffInDays === 1) return 'Yesterday';
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    return format(date, 'MMM d, yyyy');
-  };
+ const getTimeAgo = (input: Date | string) => {
+  const now = new Date();
+  const date = new Date(input); // Convert string to Date if necessary
+
+  if (isNaN(date.getTime())) return 'Invalid date'; // Optional safety
+
+  const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffInDays === 0) return 'Today';
+  if (diffInDays === 1) return 'Yesterday';
+  if (diffInDays < 7) return `${diffInDays} days ago`;
+  return format(date, 'MMM d, yyyy');
+};
 
   return (
     <div className="w-80 bg-card border-r border-border gradient-aurora-sidebar flex flex-col h-full">
@@ -66,7 +72,7 @@ export function Sidebar({
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2 mb-4">
           <Bot className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-bold">Medichat</h1>
+          <h1 className="text-xl font-bold">MediChat A.I+</h1>
         </div>
         
         <Button 
@@ -162,9 +168,17 @@ export function Sidebar({
             <AvatarImage src={user?.avatar} alt={user?.name} />
             <AvatarFallback>{user?.name?.[0]}</AvatarFallback>
           </Avatar>
-          <div className="flex-1 min-w-0">
+           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.name}</p>
+
+            {/* ✅ Display roles here */}
+            {user?.roles && user.roles.length > 0 && (
+              <p className="text-xs text-muted-foreground truncate">
+                {user.roles.join(', ')}
+              </p>
+            )}
           </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">

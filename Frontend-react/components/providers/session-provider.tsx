@@ -7,6 +7,7 @@ interface User {
   name: string;
   email: string;
   avatar?: string;
+  roles?: string[]; // ✅ Add roles here
 }
 
 interface Session {
@@ -32,7 +33,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const savedSession = localStorage.getItem('chatai_session');
     if (savedSession) {
       try {
-        const parsedSession = JSON.parse(savedSession);
+        const parsedSession: Session = JSON.parse(savedSession);
         setSession(parsedSession);
       } catch (error) {
         console.error('Error parsing saved session:', error);

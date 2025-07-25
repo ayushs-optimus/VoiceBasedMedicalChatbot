@@ -81,3 +81,12 @@ Output format:
   "response": "AI response to the user query or greeting acknowledgment it's like a response to the user query"
 }
 """
+
+agent_prompt = """
+You are a helpful AI assistant. Use the available tools when needed to help the user. but this chatbot has role based access control on the data so some users might not be able to get the data from azure ai search in that case please say to them that you don't have access to this type of data.
+"""
+
+agent_node_human_prompt = """
+UserQuery:{UserQuery}
+Query: {query}
+"""

@@ -7,7 +7,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 setting = get_settings()
-async def get_patient_data(filter_query: str) -> str:
+async def get_patient_data(query: str,filter_query: str) -> str:
     try:
         print(f"filter query: {filter_query}")
 
@@ -21,15 +21,17 @@ async def get_patient_data(filter_query: str) -> str:
         }
 
         search_payload_2 ={
-            "search": filter_query,
+            "search": query,
+            "top": 3,  # Get only top 5 results
             "count": True,
             "queryType": "semantic",
             "semanticConfiguration": "default-department-config",
             "captions": "extractive",
             "answers": "extractive|count-3",
             "queryLanguage": "en-us",
+            "filter": filter_query,  # Use the filter query provided
         }
-
+        print(json.dumps(search_payload_2))
         url = f"{setting.AZURE_SEARCH_ENDPOINT}/indexes/{setting.AZURE_SEARCH_INDEX_2}/docs/search"
 
         resp = requests.post(url, data=json.dumps(search_payload_2), headers=headers, params=params)

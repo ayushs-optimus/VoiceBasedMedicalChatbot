@@ -6,7 +6,7 @@ import uvicorn
 import time
 
 from app.config import get_settings
-from app.api.routes import chat
+from app.api.routes import chat, voice_chat
 
 # Configure logging
 logging.basicConfig(
@@ -49,6 +49,9 @@ async def add_process_time_header(request: Request, call_next):
 
 # Include routers
 app.include_router(chat.router)
+app.include_router(voice_chat.router)
+
+
 
 @app.get("/health")
 async def health_check():

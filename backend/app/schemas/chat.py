@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     system_message: Optional[str] = Field(None, description="Optional system message to control the assistant's behavior")
     user_id: Optional[str] = Field(None, description="user ID for continuing an existing conversation")
     session_id: Optional[str] = Field(None, description="Session ID for tracking the session")
+    roles: List[str] = Field(default_factory=list, description="Roles of the user making the request")
 
 class ChatResponse(BaseModel):
     """Chat response schema"""
