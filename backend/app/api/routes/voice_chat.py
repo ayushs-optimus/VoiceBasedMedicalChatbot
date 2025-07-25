@@ -70,7 +70,7 @@ async def stream_voice_response(request: VoiceStreamRequest):
 
         return StreamingResponse(
             generate_voice_stream(),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
@@ -95,8 +95,8 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
 
             try:
                 message_data = json.loads(data)
-                print(f"Parsed message data: {message_data}")
-                print("session_id:", session_id)
+                logger.info(f"Parsed message data: {message_data}")
+                logger.info(f"session_id: {session_id}")
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error: {e}")
                 await websocket_manager.send_error(websocket, "Invalid JSON format")

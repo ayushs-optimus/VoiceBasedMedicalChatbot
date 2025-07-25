@@ -18,7 +18,7 @@ from app.config import get_settings
 from app.services.cosmos_db_handler import CosmosDBHandler
 from app.services.cosmos_db_saver import CosmosDBSaver, JsonPlusSerializerCompat
 from app.agents.tools import get_agent_tools
-from app.services.prompts import query_identification_prompt
+from app.services.prompts import query_identification_prompt, agent_prompt, agent_node_human_prompt
 import json
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -79,13 +79,13 @@ class AgentExecutor:
         self.user_roles = None
 
         self.tools: List[BaseTool] = get_agent_tools(self.llm, self.user_id, self.session_id, self.query,self.user_roles)
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        # self.llm_with_tools = self.llm.bind_tools(self.tools)  # Removed as unused
 
         # Create tool node for executing tools
         self.tool_node = ToolNode(self.tools)
 
         self.agent_prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. Use the available tools when needed to help the user. but this chatbot has role based access control on the data so some users might not be able to get the data from azure ai search in that case please say to them that you don't have access to this type of data."),
+            ("system", agent_prompt),
             ("placeholder", "{messages}")
         ])
 
@@ -100,208 +100,15 @@ class AgentExecutor:
         self.query = None
         logger.info("AgentExecutor async graph setup complete.")
 
-    async def _query_identification_node(self, state: CustomMessagesState) -> CustomMessagesState:
-        """Node to classify the query and extract patient ID using the LLM."""
-        query = state.query
-        if not query:
-            return state.update_state(
-                messages=[AIMessage(content="No query provided.")],
-                query_type=None,
-                patient_id=None,
-                next_action="reject"
-            )
-
-        user_embed_query = query_identification_prompt + f"\n\nUser Query: {query}"
-        try:
-            llm_response = await self.llm.ainvoke(user_embed_query)
-            parsed = json.loads(llm_response.content.strip())
-
-            is_patient_related = parsed.get("is_patient_related", False)
-            query_type = parsed.get("query_type")
-            
-            # Safely parse and clean the patient_id list
-            raw_patient_id = parsed.get("patient_id", [])
-            if not isinstance(raw_patient_id, list):
-                raw_patient_id = []
-            patient_id = [pid for pid in raw_patient_id if isinstance(pid, str) and pid.strip()]
-
-            next_action = parsed.get("next_action", "reject")
-            response = parsed.get("response", "No response provided.")
-
-            return state.update_state(
-                messages=[AIMessage(content=response)],
-                query_type=query_type,
-                patient_id=patient_id,
-                next_action=next_action
-            )
-
-        except Exception as e:
-            # Fallback logic on LLM failure
-            import re
-            patient_ids = re.findall(r"\b\d{3,}\b", query)
-            query_type = "user_specific" if patient_ids else "generic"
-            next_action = "route_to_tool_node" if patient_ids else "reject"
-
-            return state.update_state(
-                messages=[
-                    AIMessage(content="Failed to parse LLM response. Fallback logic used."),
-                    AIMessage(content=f"Query classified as `{query_type}`."),
-                    AIMessage(content=f"Detected patient IDs: `{', '.join(patient_ids) if patient_ids else 'None'}`")
-                ],
-                query_type=query_type,
-                patient_id=patient_ids,
-                next_action=next_action
-            )
-
-    async def _custom_tool_node(self, state: CustomMessagesState) -> CustomMessagesState:
-        """Custom tool node that routes to specific tools based on query_type."""
-        
-        if not self.tools:
-            raise ValueError("No tools available for the agent.")
-        
-        tool_messages = []
-        
-        if state.query_type == "user_specific":
-            # First, look for and execute PatientIdSearchTool
-            patient_id_tool = next((tool for tool in self.tools if "PatientIdSearchTool" in tool.name or "patient_id" in tool.name.lower()), None)
-            # print(f"Looking for PatientIdSearchTool for user_specific query")
-            
-            if patient_id_tool:
-                try:
-                    # Prepare tool input for PatientIdSearchTool
-                    tool_input = {
-                        "query": state.query or self.query,
-                    }
-                    # Execute PatientIdSearchTool
-                    # print(f"Executing PatientIdSearchTool with input: {tool_input}")
-                    patient_id_result = await patient_id_tool.ainvoke(tool_input)
-                    # print(f"PatientIdSearchTool result: {patient_id_result}")
-                    
-                    # Extract patient IDs from the result and update state
-                    updated_patient_ids = state.patient_id or []
-                    try:
-                        if isinstance(patient_id_result, list):
-                            for pid in patient_id_result:
-                                pid_str = str(pid).strip()
-                                if pid_str and pid_str not in updated_patient_ids:
-                                    updated_patient_ids.append(pid_str)
-                                    print(f"✅ Added patient ID: {pid_str}")
-                            print(f"📌 Final updated_patient_ids: {updated_patient_ids}")
-                        else:
-                            print(f"⚠️ patient_id_result is not a list. Got: {type(patient_id_result)}")
-
-                    except Exception as e:
-                        print(f"🔥 Error updating patient IDs: {e}")
-
-                    # Update the state with new patient IDs
-                    state = state.update_state(patient_id=updated_patient_ids)
-                    
-                    patient_id_message = ToolMessage(
-                        content=str(patient_id_result),
-                        tool_call_id=f"{patient_id_tool.name}_{datetime.now().timestamp()}",
-                        name=patient_id_tool.name
-                    )
-                    tool_messages.append(patient_id_message)
-                    print(f"PatientIdSearchTool executed successfully")
-                    
-                except Exception as e:
-                    print(f"Error executing PatientIdSearchTool: {e}")
-                    error_message = AIMessage(content=f"Error executing {patient_id_tool.name}: {str(e)}")
-                    tool_messages.append(error_message)
-            
-            # Then, look for and execute PatientDataSearchTool
-            patient_data_tool = next((tool for tool in self.tools if "PatientDataSearchTool" in tool.name or "patient_data" in tool.name.lower()), None)
-            print(f"Looking for PatientDataSearchTool after PatientIdSearchTool")
-            
-            if patient_data_tool:
-                try:
-                    tool_input = {
-                        "query": state.query or self.query,
-                        "patient_id": state.patient_id or []
-                    }
-                    print("Custom state", json.dumps(state.model_dump(), indent=2))
-
-                    # ✅ Convert dict to Pydantic object
-                    validated_input = PatientDataSearchInput(**tool_input)
-                    print(f"Executing PatientDataSearchTool with input: {validated_input}")
-                    # ✅ Execute tool
-                    patient_data_result = await patient_data_tool.ainvoke(tool_input)
-
-                    # ✅ Wrap result in ToolMessage
-                    patient_data_message = ToolMessage(
-                        content=str(patient_data_result),
-                        tool_call_id=f"{patient_data_tool.name}_{datetime.now().timestamp()}",
-                        name=patient_data_tool.name
-                    )
-                    tool_messages.append(patient_data_message)
-                    print(f"PatientDataSearchTool executed successfully")
-                except Exception as e:
-                    print(f"Error executing PatientDataSearchTool: {e}")
-                    error_message = AIMessage(content=f"Error executing {patient_data_tool.name}: {str(e)}")
-                    tool_messages.append(error_message)
-# Check if any tools were found and executed
-            if not tool_messages:
-                print(f"No appropriate tools found for user_specific query")
-                print(f"Available tools: {[tool.name for tool in self.tools]}")
-                return state.update_state(
-                    messages=[AIMessage(content=f"No PatientIdSearchTool or PatientDataSearchTool found. Available tools: {', '.join([tool.name for tool in self.tools])}")],
-                    next_action="continue"
-                )
-                
-        else:
-            print("Generic query detected, looking for PatientDataSearchTool...")
-            # For generic queries, only use PatientDataSearchTool
-            patient_data_tool = next((tool for tool in self.tools if "PatientDataSearchTool" in tool.name or "patient_data" in tool.name.lower()), None)
-            print(f"Looking for PatientDataSearchTool for generic query")
-            
-            if patient_data_tool is None:
-                print(f"No PatientDataSearchTool found for generic query")
-                print(f"Available tools: {[tool.name for tool in self.tools]}")
-                return state.update_state(
-                    messages=[AIMessage(content=f"No PatientDataSearchTool found for generic query. Available tools: {', '.join([tool.name for tool in self.tools])}")],
-                    next_action="continue"
-                )
-            
-            try:
-                # Prepare tool input for PatientDataSearchTool
-                tool_input = {
-                    "query": state.query or self.query,
-                }
-                
-                # Execute PatientDataSearchTool
-                validated_input = PatientDataSearchInput(**tool_input)
-
-                    # ✅ Execute tool
-                patient_data_result = await patient_data_tool.ainvoke(tool_input)
-                
-                # Create ToolMessage for PatientDataSearchTool result
-                patient_data_message = ToolMessage(
-                    content=str(patient_data_result),
-                    tool_call_id=f"{patient_data_tool.name}_{datetime.now().timestamp()}",
-                    name=patient_data_tool.name
-                )
-                tool_messages.append(patient_data_message)
-                print(f"PatientDataSearchTool executed successfully for generic query")
-                
-            except Exception as e:
-                print(f"Error executing PatientDataSearchTool for generic query: {e}")
-                error_message = AIMessage(content=f"Error executing {patient_data_tool.name}: {str(e)}")
-                tool_messages.append(error_message)
-        
-        return state.update_state(
-            messages=tool_messages,
-            next_action="continue"
-        )
-
     async def _create_agent_graph(self) -> Any:
         """Create a LangGraph with the extended CustomMessagesState."""
         graph = StateGraph(CustomMessagesState)
 
         # Add nodes
-        graph.add_node("query_identification", self._query_identification_node)
-        graph.add_node("tools", self._custom_tool_node)
-        graph.add_node("store_chat", self._store_chat_node)
-        graph.add_node("agent", self._agent_node)
+        graph.add_node("query_identification", query_identification_node(self))
+        graph.add_node("tools", custom_tool_node(self))
+        graph.add_node("store_chat", store_chat_node(self))
+        graph.add_node("agent", agent_node(self))
 
         # Set entry point to query identification first
         graph.set_entry_point("query_identification")
@@ -309,7 +116,7 @@ class AgentExecutor:
         # After query identification, always go to the agent
         graph.add_conditional_edges(
             "query_identification",
-            self._should_continue,
+            should_continue(self),
             {
                 "tools": "tools",
                 "store_chat": "agent"
@@ -323,69 +130,6 @@ class AgentExecutor:
 
         return graph
 
-    async def _agent_node(self, state: CustomMessagesState) -> CustomMessagesState:
-        # print("Agent node processing messages...", state)
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful ai assistant, please do no use your internal knowledge, and there is a role assigned to every user and he only has access to the data based on his role so if he ask for the data which is not found from tools that means he does not have access to that data so tell him that he does not have access to that data "
-            "responsible for generating response based on the input"),
-            ("human", """
-            UserQuery:{UserQuery}
-    Query: {query}
-    """)
-        ])
-
-        messages = (state.messages or [])[-10:]  # Get only the last 10 messages
-        # print(f"Last 10 messages in agent node: {messages}")
-
-        response = await self.llm.ainvoke(
-            prompt_template.format_messages(UserQuery=state.query, query=messages)
-        )
-
-        # Return updated state with new message
-        return state.update_state(
-            messages=[AIMessage(content=response.content)]
-        )
-
-    def _should_continue(self, state: CustomMessagesState) -> str:
-        print("Checking if the last message requires tool calls or chat storage...")
-        # print(f"Current state: {state}")
-        next_action = state.next_action
-        # print(f"Next action: {next_action}")
-        if next_action == "reject":
-            return "store_chat"
-        else:
-            print("Continuing to tools node for further processing.")
-            # print("custom state", json.dumps(state.model_dump(), indent=2))
-            return "tools"
-        
-    async def _store_chat_node(self, state: CustomMessagesState) -> CustomMessagesState:
-        try:
-            # print("Storing chat history...", json.dumps(state.model_dump(), indent=2))
-            chat_tool = next((tool for tool in self.tools if tool.name == "chat_history_tool"), None)
-            if chat_tool is None:
-                logger.warning("ChatHistoryTool not found.")
-                return state
-
-            messages = state.messages or []
-            await chat_tool.ainvoke({
-                "messages": messages,
-                "user_id": self.user_id,
-                "session_id": self.session_id
-            })
-            updated_state = state.update_state(
-                messages=messages,
-                query="",
-                query_type=None,
-                patient_id=None,
-                next_action=""
-            )
-            logger.info("Chat history stored successfully.")
-        except Exception as e:
-            logger.exception(f"Failed to store chat history: {e}")
-
-        # Return the current state without modification
-        return updated_state
-    
     async def get_compiled_graph(self):
         try:
             async with CosmosDBHandler.from_conn_info(

@@ -16,6 +16,7 @@ from app.services.cosmos_db_handler import CosmosClientSingleton
 from azure.cosmos import PartitionKey
 from app.services.utils import generate_filter_query, get_message_type_and_content
 from app.services.prompts import filter_query_prompt
+import time
 logger = logging.getLogger(__name__)
 telemetry_client = get_telemetry_client()
 
@@ -107,69 +108,74 @@ class PatientIdSearchTool(BaseTool):
     description: str = "This tool is called to search for a patient_id based on a user specified query. It uses Azure AI Search to find the most relevant patient_id based on the description embedding. call only when there's user query"
     args_schema: Type[BaseModel] = PatientIdSearchInput  
 
-    async def search_patient_id(self, query: str) -> List[str]:
-        try:
-            print(f"Query: {query}")
-            headers = {
-                'Content-Type': 'application/json',
-                'api-key': setting.AZURE_SEARCH_KEY
-            }
-            params = {
-                'api-version': setting.AZURE_SEARCH_API_VERSION
-            }
+    async def search_patient_id(self, query: str, top: int = 1, re_ranker_score: float = 1.5, semanticConfiguration: str = "default-semantic-config", queryType: str = "semantic", captions: str = "extractive", answers: str = "extractive|count-3", queryLanguage: str = "en-us", max_retries: int = 3, retry_delay: float = 1.0) -> List[str]:
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                logger.info(f"Query: {query} (attempt {attempt+1})")
+                headers = {
+                    'Content-Type': 'application/json',
+                    'api-key': setting.AZURE_SEARCH_KEY
+                }
+                params = {
+                    'api-version': setting.AZURE_SEARCH_API_VERSION
+                }
 
-            search_payload = {
-                "search": query,
-                "top": 1,  # ✅ Get only top 5 results
-                "count": True,
-                "vectorQueries": [
-                    {
-                        "kind": "text",
-                        "text": query,
-                        "fields": "description_vector"
-                    }
-                ],
-                "queryType": "semantic",
-                "semanticConfiguration": "default-semantic-config",
-                "captions": "extractive",
-                "answers": "extractive|count-3",
-                "queryLanguage": "en-us"
-            }
+                search_payload = {
+                    "search": query,
+                    "top": top,
+                    "count": True,
+                    "vectorQueries": [
+                        {
+                            "kind": "text",
+                            "text": query,
+                            "fields": "description_vector"
+                        }
+                    ],
+                    "queryType": queryType,
+                    "semanticConfiguration": semanticConfiguration,
+                    "captions": captions,
+                    "answers": answers,
+                    "queryLanguage": queryLanguage
+                }
 
-            url = f"{setting.AZURE_SEARCH_ENDPOINT}/indexes/{setting.AZURE_SEARCH_INDEX_1}/docs/search"
-            resp = requests.post(url, data=json.dumps(search_payload), headers=headers, params=params)
-            resp.raise_for_status()  # Ensure exception is raised for HTTP errors
+                url = f"{setting.AZURE_SEARCH_ENDPOINT}/indexes/{setting.AZURE_SEARCH_INDEX_1}/docs/search"
+                resp = requests.post(url, data=json.dumps(search_payload), headers=headers, params=params)
+                resp.raise_for_status()  # Ensure exception is raised for HTTP errors
 
-            search_results = resp.json()
-            results = search_results.get("value", [])
-            # print(f"Search results: {json.dumps(results, indent=2)}")
-            # ✅ Filter by score threshold
-            re_ranker_score = 1.5
-            filtered_results = [
-                r for r in results if r.get("@search.rerankerScore", 0) >= re_ranker_score
-            ]
-
-            # ✅ Clean output for printing
-            cleaned_results = [
-                {k: v for k, v in r.items() if k != "description_vector"}
-                for r in filtered_results
-            ]
-            # print(f"Search results: {json.dumps(cleaned_results, indent=2)}")
-
-            # ✅ Extract unique patient IDs
-            patient_ids = list({r["patient_id"] for r in filtered_results if "patient_id" in r})
-
-            return patient_ids if patient_ids else ["Patient not found."]
-        
-        except Exception as ex:
-            logger.exception(f"Error during patient search: {ex}")
-            return ["Error searching for patient."]
+                search_results = resp.json()
+                results = search_results.get("value", [])
+                filtered_results = [
+                    r for r in results if r.get("@search.rerankerScore", 0) >= re_ranker_score
+                ]
+                patient_ids = list({r["patient_id"] for r in filtered_results if "patient_id" in r})
+                if patient_ids:
+                    return patient_ids
+                else:
+                    logger.warning("No patient IDs found in Azure Search results.")
+                    return ["Patient not found."]
+            except Exception as ex:
+                logger.error(f"Error during patient search (attempt {attempt+1}): {ex}")
+                attempt += 1
+                if attempt < max_retries:
+                    logger.info(f"Retrying Azure Search (attempt {attempt+1}) after {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error("Max retries reached for Azure Search. Returning error message.")
+                    return [f"Error searching for patient: {str(ex)}"]
     
     async def _arun(
         self, query: str,
+        top: int = 1,
+        re_ranker_score: float = 1.5,
+        semanticConfiguration: str = "default-semantic-config",
+        queryType: str = "semantic",
+        captions: str = "extractive",
+        answers: str = "extractive|count-3",
+        queryLanguage: str = "en-us",
         run_manager: Optional[CallbackManagerForToolRun] = None
     ) -> List[str]:
-        patient_id = await self.search_patient_id(query)
+        patient_id = await self.search_patient_id(query, top=top, re_ranker_score=re_ranker_score, semanticConfiguration=semanticConfiguration, queryType=queryType, captions=captions, answers=answers, queryLanguage=queryLanguage)
         return patient_id
 
     def _run(self, *args, **kwargs) -> str:
@@ -183,7 +189,15 @@ class PatientDataSearchTool(BaseTool):
     user_roles: Optional[List[str]] = Field(default_factory=list, description="Roles of the user making the request")
     async def _arun(
         self,
-        query: str,patient_id: Optional[List[str]] = None,
+        query: str,
+        patient_id: Optional[List[str]] = None,
+        top: int = 1,
+        re_ranker_score: float = 1.5,
+        semanticConfiguration: str = "default-semantic-config",
+        queryType: str = "semantic",
+        captions: str = "extractive",
+        answers: str = "extractive|count-3",
+        queryLanguage: str = "en-us",
         run_manager: Optional[CallbackManagerForToolRun] = None
     ) -> str:
         try:
@@ -191,10 +205,16 @@ class PatientDataSearchTool(BaseTool):
                 query=query,
                 patient_id=patient_id,
                 roles=self.user_roles,
-                llm=self.llm
+                llm=self.llm,
+                top=top,
+                re_ranker_score=re_ranker_score,
+                semanticConfiguration=semanticConfiguration,
+                queryType=queryType,
+                captions=captions,
+                answers=answers,
+                queryLanguage=queryLanguage
             )
-            patient_data = await get_patient_data(query=query,filter_query=filter_query)
-            # print(f"Patient data: {patient_data}")
+            patient_data = await get_patient_data(query=query, filter_query=filter_query)
             return patient_data
         except Exception as e:
             logger.exception(f"Error in patient data search tool: {e}")
